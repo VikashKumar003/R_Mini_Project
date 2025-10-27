@@ -1,0 +1,128 @@
+setwd("C:/Users/HP/OneDrive/Documents/R_Programming")
+
+getwd()
+
+install.packages(c("dplyr", "caret", "rpart", "rpart.plot", "pROC"))
+
+installed <- c("dplyr", "caret", "rpart", "rpart.plot", "pROC")
+installed %in% rownames(installed.packages())
+
+library(dplyr)
+movies <- read.csv("tmdb_5000_movies.csv", stringsAsFactors = FALSE)
+credits <- read.csv("tmdb_5000_credits.csv", stringsAsFactors = FALSE)
+
+head(movies)
+head(credits)
+
+# Merge on 'title'
+tmdb <- merge(movies, credits, by = "title")
+# View structure
+str(tmdb)
+
+tmdb_selected <- tmdb %>%
+  select(title, budget, revenue, popularity, runtime, vote_average, vote_count, release_date, genres)
+
+tmdb_clean <- tmdb_selected %>%
+  filter(budget > 0 & revenue > 0)
+
+tmdb_clean$Success <- ifelse(tmdb_clean$revenue > 1.5 * tmdb_clean$budget, "Hit", "Flop")
+tmdb_clean$Success <- as.factor(tmdb_clean$Success)
+
+table(tmdb_clean$Success)
+
+library(caret)
+set.seed(123)
+index <- createDataPartition(tmdb_clean$Success, p = 0.8, list = FALSE)
+train <- tmdb_clean[index, ]
+test  <- tmdb_clean[-index, ]
+
+library(rpart)
+library(rpart.plot)
+
+model <- rpart(Success ~ budget + revenue + popularity + runtime + vote_average + vote_count,
+               data = train, method = "class")
+
+rpart.plot(model, type = 3, extra = 104, fallen.leaves = TRUE)
+
+pred <- predict(model, test, type = "class")
+confusionMatrix(pred, test$Success)
+
+library(pROC)
+prob <- predict(model, test, type = "prob")[,2]
+roc_obj <- roc(test$Success, prob, levels = c("Flop", "Hit"))
+plot(roc_obj, col = "blue", main = "ROC Curve for Box Office Hit Prediction")
+
+barplot(model$variable.importance, main = "Feature Importance", col = "skyblue")
+
+
+
+# Logistic Regression Model
+log_model <- glm(Success ~ budget + revenue + popularity + runtime + vote_average + vote_count,
+                 data = train, 
+                 family = binomial)
+summary(log_model)
+
+# Predict probabilities
+log_pred_prob <- predict(log_model, test, type = "response")
+
+# Convert probabilities to class labels
+log_pred <- ifelse(log_pred_prob > 0.5, "Hit", "Flop")
+
+# Convert to factor for evaluation
+log_pred <- as.factor(log_pred)
+
+library(caret)
+
+confusionMatrix(log_pred, test$Success)
+
+library(pROC)
+
+roc_obj <- roc(test$Success, log_pred_prob, levels = c("Flop", "Hit"))
+plot(roc_obj, col = "red", main = "ROC Curve - Logistic Regression")
+auc(roc_obj)
+
+
+# Decision Tree Accuracy (replace with your actual number)
+tree_acc <- 0.9364  
+
+# Logistic Regression Accuracy
+log_cm <- confusionMatrix(log_pred, test$Success)
+log_acc <- log_cm$overall["Accuracy"]
+
+# Compare
+comparison <- data.frame(
+  Model = c("Decision Tree", "Logistic Regression"),
+  Accuracy = c(tree_acc, log_acc)
+)
+
+print(comparison)
+
+
+library(caret)
+
+# Decision Tree Accuracy (replace with your actual number if different)
+tree_acc <- 0.9364  
+
+# Logistic Regression Accuracy
+log_cm <- confusionMatrix(log_pred, test$Success)
+log_acc <- log_cm$overall["Accuracy"]
+
+# Create a data frame for visualization
+accuracy_df <- data.frame(
+  Model = c("Decision Tree", "Logistic Regression"),
+  Accuracy = c(tree_acc, as.numeric(log_acc))
+)
+
+print(accuracy_df)
+
+library(ggplot2)
+
+ggplot(accuracy_df, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  ylim(0, 1) +
+  geom_text(aes(label = round(Accuracy, 3)), vjust = -0.5, size = 5) +
+  labs(title = "Model Accuracy Comparison", y = "Accuracy", x = "") +
+  theme_minimal() +
+  theme(legend.position = "none", 
+        plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+
